@@ -12,9 +12,9 @@
 #include <stdio.h>
 #include <unistd.h>
 
-#include "defs.h"
-#include "proxy_ioctl.h"
-#include "proxy_queue.h"
+#include "linux-mtd/defs.h"
+#include "linux-mtd/proxy_ioctl.h"
+#include "linux-mtd/proxy_queue.h"
 
 typedef enum {
 	ANSWER_ACK,
