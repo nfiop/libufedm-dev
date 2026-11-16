@@ -91,7 +91,7 @@ make
 This produces the static library:
 
 ```
-libufedmdev-io.a
+libufedmdev.a
 ```
 
 ### **Installation**
