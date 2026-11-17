@@ -208,4 +208,3 @@ void unregister_proxy_eventfd(
     struct proxy_device_queue_state *state, size_t slot_idx);
 
 #endif
-

@@ -25,7 +25,7 @@ struct proxy_shm_info {
 	 */
 	__u32 total_buf_size;
 
-	__u32 reserved[6];	/* reserved for future expansion */
+	__u32 reserved[6]; /* reserved for future expansion */
 };
 
 /* This struct is used by userspace for determining the

@@ -511,4 +511,3 @@ void unregister_proxy_eventfd(
 	// it down, although we have an assertion check with that variable.
 	(void)ret;
 }
-
