@@ -301,7 +301,7 @@ static int create_eventfds(struct proxy_device_queue_state *state)
 	size_t idx;
 
 	for (idx = 0; idx < state->info.slots_count; idx++) {
-		efd = eventfd(0, 0);
+		efd = eventfd(0, EFD_SEMAPHORE);
 		if (efd < 0) {
 			efd = -errno;
 			goto cleanup;
