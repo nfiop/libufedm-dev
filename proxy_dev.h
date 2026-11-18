@@ -99,7 +99,7 @@ struct proxy_device_queue_state {
  * @param state to-be-filled pointer of a struct containting the new state
  * @return 0 if successful, other negative number for error
  */
-int open_proxy_device_state(const char *path, struct proxy_device_state *state);
+int proxy_device_open(const char *path, struct proxy_device_state *state);
 
 /**
  * @brief Create an I/O queue state
@@ -111,7 +111,7 @@ int open_proxy_device_state(const char *path, struct proxy_device_state *state);
  * @param fatal_stop_callback a fatal stop callback
  * @return 0 if successful, other negative number for error
  */
-int create_proxy_dev_queue_state(struct proxy_device_state *dev_state,
+int proxy_device_create_queue_state(struct proxy_device_state *dev_state,
     struct proxy_device_queue_state *state, size_t queue_idx,
     struct proxy_queue_func_ops *func_ops, int (*thread_priv_create)(void **),
     void (*thread_priv_teardown)(void *));
@@ -133,7 +133,7 @@ int create_proxy_dev_queue_state(struct proxy_device_state *dev_state,
  * @return Number of queues actually being initialized if successful,
  *		   other negative number for error.
  */
-int initialize_proxy_dev_queues(struct proxy_device_state *state,
+int proxy_device_initialize_queues(struct proxy_device_state *state,
     struct proxy_device_queue_state *queues, size_t queues_count,
     struct proxy_queue_func_ops *ops, int (*thread_priv_create)(void **),
     void (*thread_priv_teardown)(void *));
@@ -147,7 +147,7 @@ int initialize_proxy_dev_queues(struct proxy_device_state *state,
  * @param state a complete and operable proxy device queue state
  * @return 0 if successful, other negative number for error
  */
-void destroy_proxy_dev_queue_state(struct proxy_device_queue_state *state);
+void proxy_device_destroy_queue_state(struct proxy_device_queue_state *state);
 
 /**
  * @brief Close a proxy device
@@ -163,7 +163,7 @@ void destroy_proxy_dev_queue_state(struct proxy_device_queue_state *state);
  * @param state to-be-filled pointer of a struct containting the new state
  * @return 0 if successful, other negative number for error
  */
-void close_proxy_device(struct proxy_device_state *state);
+void proxy_device_close(struct proxy_device_state *state);
 
 /**
  * @brief Open a proxy device file descriptor based on a MTD index string
@@ -175,7 +175,7 @@ void close_proxy_device(struct proxy_device_state *state);
  * @return non-negative file descriptor number if successful, other negative
  *         number for error
  */
-int open_proxy_device_by_argv_index(const char *index);
+int proxy_device_open_by_argv_index(const char *index);
 
 /**
  * @brief Register an eventfd on a I/O read/write slot
@@ -187,7 +187,7 @@ int open_proxy_device_by_argv_index(const char *index);
  * @param slot_idx The I/O write/read slot index
  * @return 0 if successful, other negative number for error
  */
-int register_proxy_eventfd(
+int proxy_device_register_eventfd(
     struct proxy_device_queue_state *state, size_t slot_idx, int efd);
 
 /**
@@ -204,7 +204,7 @@ int register_proxy_eventfd(
  * @param slot_idx The I/O write/read slot index
  * @return void
  */
-void unregister_proxy_eventfd(
+void proxy_device_unregister_eventfd(
     struct proxy_device_queue_state *state, size_t slot_idx);
 
 #endif

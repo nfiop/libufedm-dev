@@ -18,7 +18,7 @@
 
 #include "proxy_dev.h"
 
-int open_proxy_device_by_argv_index(const char *index)
+int proxy_device_open_by_argv_index(const char *index)
 {
 	unsigned long idx;
 	char *end;
@@ -59,7 +59,7 @@ int open_proxy_device_by_argv_index(const char *index)
 	return fd;
 }
 
-int open_proxy_device_state(const char *path, struct proxy_device_state *state)
+int proxy_device_open(const char *path, struct proxy_device_state *state)
 {
 	int ret;
 
@@ -94,7 +94,7 @@ exit:
 	return ret;
 }
 
-void close_proxy_device(struct proxy_device_state *state)
+void proxy_device_close(struct proxy_device_state *state)
 {
 	munmap(state->shared_mem_buf, state->shared_mem_buf_mmap_size);
 
@@ -321,7 +321,7 @@ static void unregister_eventfds(
     struct proxy_device_queue_state *state, size_t max_slot_idx)
 {
 	for (size_t slot_idx = 0; slot_idx < max_slot_idx; slot_idx++) {
-		unregister_proxy_eventfd(state, slot_idx);
+		proxy_device_unregister_eventfd(state, slot_idx);
 	}
 }
 
@@ -330,7 +330,8 @@ static int register_eventfds(struct proxy_device_queue_state *state)
 	int ret;
 	size_t idx;
 	for (idx = 0; idx < state->info.slots_count; idx++) {
-		ret = register_proxy_eventfd(state, idx, state->eventfds[idx]);
+		ret = proxy_device_register_eventfd(
+		    state, idx, state->eventfds[idx]);
 		if (ret < 0)
 			goto cleanup;
 	}
@@ -342,7 +343,7 @@ cleanup:
 	return ret;
 }
 
-int create_proxy_dev_queue_state(struct proxy_device_state *dev_state,
+int proxy_device_create_queue_state(struct proxy_device_state *dev_state,
     struct proxy_device_queue_state *state, size_t queue_idx,
     struct proxy_queue_func_ops *func_ops, int (*thread_priv_create)(void **),
     void (*thread_priv_teardown)(void *))
@@ -419,11 +420,11 @@ static void __destroy_queues(
 	size_t idx;
 
 	for (idx = 0; idx < max_idx; idx++) {
-		destroy_proxy_dev_queue_state(&queues[idx]);
+		proxy_device_destroy_queue_state(&queues[idx]);
 	}
 }
 
-int initialize_proxy_dev_queues(struct proxy_device_state *state,
+int proxy_device_initialize_queues(struct proxy_device_state *state,
     struct proxy_device_queue_state *queues, size_t queues_count,
     struct proxy_queue_func_ops *ops, int (*thread_priv_create)(void **),
     void (*thread_priv_teardown)(void *))
@@ -435,7 +436,7 @@ int initialize_proxy_dev_queues(struct proxy_device_state *state,
 		queues_count = state->shm_info.queues_count;
 
 	for (idx = 0; idx < queues_count; idx++) {
-		ret = create_proxy_dev_queue_state(state, &queues[idx], idx,
+		ret = proxy_device_create_queue_state(state, &queues[idx], idx,
 		    ops, thread_priv_create, thread_priv_teardown);
 		if (ret < 0) {
 			goto destroy_queues;
@@ -452,7 +453,7 @@ exit:
 	return ret;
 }
 
-void destroy_proxy_dev_queue_state(struct proxy_device_queue_state *state)
+void proxy_device_destroy_queue_state(struct proxy_device_queue_state *state)
 {
 	unregister_eventfds(state, state->info.slots_count);
 	destroy_threads(state, state->info.slots_count);
@@ -460,7 +461,7 @@ void destroy_proxy_dev_queue_state(struct proxy_device_queue_state *state)
 	free(state->eventfds);
 }
 
-int register_proxy_eventfd(
+int proxy_device_register_eventfd(
     struct proxy_device_queue_state *state, size_t slot_idx, int efd)
 {
 	int ret;
@@ -488,7 +489,7 @@ exit_ioctl_error:
 	return ret;
 }
 
-void unregister_proxy_eventfd(
+void proxy_device_unregister_eventfd(
     struct proxy_device_queue_state *state, size_t slot_idx)
 {
 	int ret;
