@@ -89,8 +89,7 @@ struct proxy_device_queue_state {
  * This function opens a ufedm proxy device and fills a given
  * `struct proxy_device_state` - it issues several ioctls to fetch crucial
  * data on the device and its backing MTD device, create a memory mapping
- * to shared memory buffer [with mmap(2) call] and registers eventfd's for
- * each write slots and read slots on the shared memory buffer.
+ * to shared memory buffer [with mmap(2) call].
  *
  * Upon success, the given `struct proxy_device_state *state` should be filled
  * with all the needed details about current state of the proxy device.
