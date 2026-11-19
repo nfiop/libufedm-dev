@@ -156,6 +156,15 @@ static void *worker_thread_func(void *arg)
 		memcpy(
 		    state->raw_page_buf, state->slot->buf, state->raw_page_len);
 
+		/* Some basic rules and guidelines:
+		 *  - A callback should be ideally a non-blocking function
+		 *  - If there's a need for blocking, it MUST NOT block forever
+		 *	  (i.e. use a timeout)
+		 *  - A callback SHOULD NOT touch the header structure. That
+		 *    header is considered constant during callback execution.
+		 *  - The answer (retval) is either ANSWER_NACK or ANSWER_ACK
+		 * only.
+		 */
 		answer = callback(hdr, state->raw_page_buf, &context_res,
 		    state->private_data);
 		if (had_fatal_stop)
