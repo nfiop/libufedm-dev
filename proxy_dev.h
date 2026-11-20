@@ -136,7 +136,8 @@ void proxy_device_destroy_queue_state(struct proxy_device_queue_state *state);
  * @brief Close a proxy device
  *
  * This function closes a ufedm proxy device that was opened with the
- * `open_proxy_device_state` function.
+ * `proxy_open_device` function for Linux or otherwise the
+ * `proxy_device_open_emulated` function.
  * It unmap the shared memory buffer and finally closes the file descriptor.
  *
  * IMPORTANT: We don't free the `struct proxy_device_state` - it's up to the
