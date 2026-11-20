@@ -7,98 +7,69 @@
 
 #include <assert.h>
 #include <errno.h>
-#include <fcntl.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/eventfd.h>
-#include <sys/mman.h>
 #include <unistd.h>
 
 #include "proxy_dev.h"
+#include "wrappers/thread_id.h"
 
-int proxy_device_open_by_argv_index(const char *index)
+#if defined(__linux__)
+#include "linux-mtd/dev.h"
+/* Defined for the close function */
+#include <fcntl.h>
+#include <sys/mman.h>
+#endif
+
+#include "emulated-proxy/dev.h"
+
+ssize_t proxy_device_write(
+    struct proxy_device_state *state, const uint8_t *buf, size_t len)
 {
-	unsigned long idx;
-	char *end;
-	int fd;
-	char path[64];
-
-	errno = 0;
-	idx = strtoul(index, &end, 10);
-
-	/* Validation */
-	if (errno != 0) {
-		perror("strtoul");
-		return 1;
-	}
-
-	if (*end != '\0') {
-		fprintf(
-		    stderr, "Invalid input: trailing characters '%s'\n", end);
-		return 1;
-	}
-
-	if (idx > 1000) {
-		fprintf(stderr, "Index too large (max 1000)\n");
-		return 1;
-	}
-
-	snprintf(path, sizeof(path), "/dev/ufedm_proxy%lu", idx);
-
-	fprintf(stderr, "Opening %s\n", path);
-
-	fd = open(path, O_RDWR);
-	if (fd < 0) {
-		perror("open");
-		return 1;
-	}
-
-	fprintf(stderr, "Device opened successfully\n");
-	return fd;
+	return state->write(state, buf, len);
 }
 
-int proxy_device_open(const char *path, struct proxy_device_state *state)
+ssize_t proxy_device_read(
+    struct proxy_device_state *state, uint8_t *buf, size_t len)
 {
-	int ret;
+	return state->read(state, buf, len);
+}
 
-	state->fd = open(path, O_RDWR);
-	if (state->fd < 0) {
-		ret = -errno;
-		goto exit;
-	}
+ssize_t proxy_device_write_with_offset(struct proxy_device_state *state,
+    off_t offset, const uint8_t *buf, size_t len)
+{
+	return state->pwrite(state, offset, buf, len);
+}
 
-	ret = ioctl(state->fd, PROXY_IOC_GET_SHM_INFO, &state->shm_info);
-	if (ret < 0) {
-		ret = -errno;
-		goto exit;
-	}
+ssize_t proxy_device_read_with_offset(
+    struct proxy_device_state *state, off_t offset, uint8_t *buf, size_t len)
+{
+	return state->pread(state, offset, buf, len);
+}
 
-	ret = ioctl(state->fd, PROXY_IOC_GET_MTD_INFO, &state->mtd_info);
-	if (ret < 0) {
-		ret = -errno;
-		goto exit;
-	}
-
-	state->shared_mem_buf_mmap_size = state->shm_info.total_buf_size;
-	state->shared_mem_buf = mmap(NULL, state->shared_mem_buf_mmap_size,
-	    PROT_READ | PROT_WRITE, MAP_SHARED, state->fd, 0);
-
-	if (state->shared_mem_buf == NULL) {
-		ret = -EFAULT;
-		goto exit;
-	}
-
-exit:
-	return ret;
+int proxy_device_seek(struct proxy_device_state *state, off_t seek_offset)
+{
+	return state->seek(state, seek_offset);
 }
 
 void proxy_device_close(struct proxy_device_state *state)
 {
-	munmap(state->shared_mem_buf, state->shared_mem_buf_mmap_size);
-
-	close(state->fd);
+#if defined(__linux__)
+	/* fd is -1 when it's emulated */
+	if (state->fd != -1) {
+		munmap(state->shared_mem_buf, state->shared_mem_buf_mmap_size);
+		close(state->fd);
+	} else {
+		pthread_mutex_destroy(&state->emu_cur_off_lock);
+		free(state->shared_mem_buf);
+	}
+#else
+	assert(state->fd == -1);
+	pthread_mutex_destroy(&state->emu_cur_off_lock);
+	free(state->shared_mem_buf);
+#endif
 }
 
 static void zero_transform_context_results(
@@ -121,15 +92,31 @@ static void *worker_thread_func(void *arg)
 	struct shm_slot_hdr *hdr;
 	struct proxy_nack nack;
 	struct proxy_ack ack;
+
+	/* Callbacks */
+	int (*proxy_ack)(
+	    struct proxy_device_thread_state *, struct proxy_ack *ack);
+	int (*proxy_nack)(
+	    struct proxy_device_thread_state *, struct proxy_nack *nack);
+	int (*block_until_request_submitted)(
+	    struct proxy_device_thread_state *);
 	transform_data_func_t callback;
 
 	hdr = (struct shm_slot_hdr *)&state->slot->header;
 
 	assert(state != NULL);
-	assert(state->transform_func != NULL);
+	assert(state->proxy_ack != NULL);
+	assert(state->proxy_nack != NULL);
+	assert(state->block_until_request_submitted != NULL);
+
+#if defined(__linux__)
 	assert(state->efd >= 0);
+#endif
 
 	callback = state->transform_func;
+	proxy_ack = state->proxy_ack;
+	proxy_nack = state->proxy_nack;
+	block_until_request_submitted = state->block_until_request_submitted;
 
 	while (!state->_stop) {
 		// This call should block until there's a new
@@ -140,7 +127,7 @@ static void *worker_thread_func(void *arg)
 		// It is expected that upon destroying of thread workers
 		// that the eventfd will be unregistered from the kernel
 		// to ensure no interference from stopping.
-		rc = read(state->efd, &counter, sizeof(counter));
+		rc = block_until_request_submitted(state);
 		if (rc < 0)
 			break;
 		// We might wake just for exiting right now.
@@ -176,8 +163,7 @@ static void *worker_thread_func(void *arg)
 			nack.base.slot_num = state->slot_idx;
 			nack.base.seq_num = hdr->seq_num;
 			nack.positive_errno = rc;
-			rc = ioctl(
-			    state->proxy_device_fd, PROXY_IOC_NACK, &nack);
+			rc = proxy_nack(state, &nack);
 			if (rc < 0) {
 				rc = errno;
 				had_fatal_stop = true;
@@ -192,7 +178,7 @@ static void *worker_thread_func(void *arg)
 			ack.base.seq_num = hdr->seq_num;
 			ack.retlen = context_res.data_retlen;
 			ack.oob_retlen = context_res.oob_retlen;
-			rc = ioctl(state->proxy_device_fd, PROXY_IOC_ACK, &ack);
+			rc = proxy_ack(state, &ack);
 			if (rc < 0) {
 				rc = errno;
 				had_fatal_stop = true;
@@ -202,154 +188,9 @@ static void *worker_thread_func(void *arg)
 	}
 
 	if (had_fatal_stop && state->notify_fatal_stop_func)
-		state->notify_fatal_stop_func(gettid(), rc);
+		state->notify_fatal_stop_func(get_thread_id(), rc);
 
 	return NULL;
-}
-
-static void destroy_threads(
-    struct proxy_device_queue_state *state, size_t max_thread_index)
-{
-	int ret;
-	size_t idx;
-	const char *dummy_buf = "0\n";
-	struct proxy_device_thread_state *thread;
-
-	for (idx = 0; idx < max_thread_index; idx++) {
-		thread = &state->thread_array[idx];
-		ret = write(thread->efd, dummy_buf, sizeof(*dummy_buf));
-		if (ret < 0) {
-			perror("write");
-			continue;
-		}
-
-		pthread_join(thread->tid, NULL);
-
-		if (thread->priv_teardown && thread->private_data)
-			thread->priv_teardown(thread->private_data);
-
-		free(thread->raw_page_buf);
-	}
-}
-
-static int create_threads(struct proxy_device_queue_state *state,
-    u8 *shared_mem_buffer, size_t slot_size, size_t flash_page_size,
-    void *transform_callback,
-    notify_fatal_stop_thread_func_t fatal_stop_callback,
-    int (*thread_priv_create)(void **), void (*thread_priv_teardown)(void *))
-{
-	int ret;
-	size_t idx;
-	struct proxy_device_thread_state *thread_state;
-
-	if ((thread_priv_create && !thread_priv_teardown) ||
-	    (!thread_priv_create && thread_priv_teardown))
-		return -EINVAL;
-
-	for (idx = 0; idx < state->info.slots_count; idx++) {
-		thread_state = &state->thread_array[idx];
-
-		thread_state->efd = state->eventfds[idx];
-		thread_state->_stop = false;
-		thread_state->proxy_device_fd = state->proxy_device_fd;
-		thread_state->queue_idx = state->info.idx;
-		thread_state->slot_idx = idx;
-		thread_state->slot =
-		    (struct shared_mem_slot *)shared_mem_buffer;
-		thread_state->slot_buf_len = slot_size;
-		thread_state->transform_func = transform_callback;
-		thread_state->notify_fatal_stop_func = fatal_stop_callback;
-		thread_state->priv_teardown = thread_priv_teardown;
-
-		if (thread_priv_create) {
-			ret = thread_priv_create(&thread_state->private_data);
-			if (ret < 0)
-				goto cleanup;
-		}
-
-		thread_state->raw_page_buf = malloc(flash_page_size);
-		if (!thread_state->raw_page_buf) {
-			ret = -ENOMEM;
-			goto cleanup;
-		}
-
-		thread_state->raw_page_len = flash_page_size;
-
-		ret = pthread_create(&state->thread_array[idx].tid, NULL,
-		    worker_thread_func, thread_state);
-		if (ret < 0)
-			ret = -errno;
-
-		shared_mem_buffer += slot_size;
-		if (ret < 0) {
-			free(thread_state->raw_page_buf);
-			goto cleanup;
-		}
-	}
-
-	return 0;
-
-cleanup:
-	destroy_threads(state, idx);
-	return ret;
-}
-
-static void close_eventfds(
-    struct proxy_device_queue_state *state, size_t max_efd_idx)
-{
-	size_t idx;
-	for (idx = 0; idx < max_efd_idx; idx++) {
-		close(state->eventfds[idx]);
-		state->eventfds[idx] = -1;
-	}
-}
-
-static int create_eventfds(struct proxy_device_queue_state *state)
-{
-	int efd;
-	size_t idx;
-
-	for (idx = 0; idx < state->info.slots_count; idx++) {
-		efd = eventfd(0, EFD_SEMAPHORE);
-		if (efd < 0) {
-			efd = -errno;
-			goto cleanup;
-		}
-
-		state->eventfds[idx] = efd;
-	}
-
-	return 0;
-
-cleanup:
-	close_eventfds(state, idx);
-	return efd;
-}
-
-static void unregister_eventfds(
-    struct proxy_device_queue_state *state, size_t max_slot_idx)
-{
-	for (size_t slot_idx = 0; slot_idx < max_slot_idx; slot_idx++) {
-		proxy_device_unregister_eventfd(state, slot_idx);
-	}
-}
-
-static int register_eventfds(struct proxy_device_queue_state *state)
-{
-	int ret;
-	size_t idx;
-	for (idx = 0; idx < state->info.slots_count; idx++) {
-		ret = proxy_device_register_eventfd(
-		    state, idx, state->eventfds[idx]);
-		if (ret < 0)
-			goto cleanup;
-	}
-
-	return 0;
-
-cleanup:
-	unregister_eventfds(state, idx);
-	return ret;
 }
 
 int proxy_device_create_queue_state(struct proxy_device_state *dev_state,
@@ -358,67 +199,33 @@ int proxy_device_create_queue_state(struct proxy_device_state *dev_state,
     void (*thread_priv_teardown)(void *))
 {
 	int ret;
-	u8 *shared_mem_buf;
 
 	state->proxy_device_fd = dev_state->fd;
 	state->info.idx = queue_idx;
 
-	ret = ioctl(
-	    state->proxy_device_fd, PROXY_IOC_GET_QUEUE_INFO, &state->info);
-	if (ret < 0) {
-		ret = errno;
-		goto exit;
-	}
-
-	state->eventfds = calloc(state->info.slots_count, sizeof(int));
-	if (!state->eventfds) {
-		ret = -ENOMEM;
-		goto exit;
-	}
-
-	state->thread_array = calloc(
-	    state->info.slots_count, sizeof(struct proxy_device_thread_state));
-	if (!state->thread_array) {
-		ret = -ENOMEM;
-		goto remove_eventfds;
-	}
-
-	ret = create_eventfds(state);
-	if (ret < 0)
-		goto free_eventfds_list;
-
-	assert(state->info.type == PROXY_QUEUE_TYPE_READ ||
-	       state->info.type == PROXY_QUEUE_TYPE_WRITE);
-
-	shared_mem_buf =
-	    ((u8 *)dev_state->shared_mem_buf) + state->info.mem_offset;
-	if (state->info.type == PROXY_QUEUE_TYPE_READ)
-		ret = create_threads(state, shared_mem_buf,
-		    dev_state->shm_info.slot_size,
-		    dev_state->mtd_info.flash_page_size, func_ops->read,
-		    func_ops->fatal_stop, thread_priv_create,
+	if (state->proxy_device_fd == -1) {
+		ret = emulated_proxy_device_create_queue_state(dev_state, state,
+		    queue_idx, worker_thread_func, func_ops, thread_priv_create,
 		    thread_priv_teardown);
-	else
-		ret = create_threads(state, shared_mem_buf,
-		    dev_state->shm_info.slot_size,
-		    dev_state->mtd_info.flash_page_size, func_ops->write,
-		    func_ops->fatal_stop, thread_priv_create,
+	} else {
+#if !defined(__linux__)
+		/* On non-Linux platforms, there's simply no real MTD or a proxy
+		 * device
+		 */
+		ret = -EOPNOTSUPP;
+#else
+		ret = linux_proxy_device_create_queue_state(dev_state, state,
+		    queue_idx, worker_thread_func, func_ops, thread_priv_create,
 		    thread_priv_teardown);
+#endif
+	}
+
 	if (ret < 0)
-		goto remove_eventfds;
+		goto exit;
 
-	ret = register_eventfds(state);
-	if (ret < 0)
-		goto remove_threads;
-
-	return 0;
-
-remove_threads:
-	destroy_threads(state, state->info.slots_count);
-remove_eventfds:
-	close_eventfds(state, state->info.slots_count);
-free_eventfds_list:
-	free(state->eventfds);
+	/* Keep a reference for the queue in the device state */
+	dev_state->queues[queue_idx] = state;
+	ret = 0;
 exit:
 	return ret;
 }
@@ -454,6 +261,7 @@ int proxy_device_initialize_queues(struct proxy_device_state *state,
 
 	/* Return the number of queues being initialized */
 	ret = idx;
+	atomic_store(&state->queues_initialized, true);
 	goto exit;
 
 destroy_queues:
@@ -464,60 +272,15 @@ exit:
 
 void proxy_device_destroy_queue_state(struct proxy_device_queue_state *state)
 {
-	unregister_eventfds(state, state->info.slots_count);
-	destroy_threads(state, state->info.slots_count);
-	close_eventfds(state, state->info.slots_count);
-	free(state->eventfds);
-}
-
-int proxy_device_register_eventfd(
-    struct proxy_device_queue_state *state, size_t slot_idx, int efd)
-{
-	int ret;
-	struct proxy_register_eventfd register_req;
-	assert(state->info.slots_count > slot_idx);
-	assert(state->info.type == PROXY_QUEUE_TYPE_READ ||
-	       state->info.type == PROXY_QUEUE_TYPE_WRITE);
-
-	register_req.fd = efd;
-	register_req.type = state->info.type;
-
-	register_req.slot_idx = slot_idx;
-	ret = ioctl(
-	    state->proxy_device_fd, PROXY_IOC_REGISTER_EVENTFD, &register_req);
-	if (ret < 0) {
-		ret = errno;
-		perror("ioctl");
-		goto exit_ioctl_error;
+#if defined(__linux__)
+	/* fd is -1 when it's emulated */
+	if (state->proxy_device_fd != -1) {
+		linux_proxy_device_destroy_queue_state(state);
+	} else {
+		emulated_proxy_device_destroy_queue_state(state);
 	}
-
-	return 0;
-
-exit_ioctl_error:
-	close(efd);
-	return ret;
-}
-
-void proxy_device_unregister_eventfd(
-    struct proxy_device_queue_state *state, size_t slot_idx)
-{
-	int ret;
-	struct proxy_unregister_eventfd unregister_req;
-	assert(state->info.slots_count > slot_idx);
-	assert(state->info.type == PROXY_QUEUE_TYPE_READ ||
-	       state->info.type == PROXY_QUEUE_TYPE_WRITE);
-
-	unregister_req.type = state->info.type;
-	unregister_req.slot_idx = slot_idx;
-	ret = ioctl(state->proxy_device_fd, PROXY_IOC_UNREGISTER_EVENTFD,
-	    &unregister_req);
-
-	// We are very unlikey to get error (unless we passed wrong slot idx,
-	// etc), so assert on such condition.
-	assert(ret == 0);
-
-	// FIXME: The compiler on the Olimex A20 buildroot environment was
-	// angry we didn't "use" ret anywhere in the function. Put this to calm
-	// it down, although we have an assertion check with that variable.
-	(void)ret;
+#else
+	assert(state->proxy_device_fd == -1);
+	emulated_proxy_device_destroy_queue_state(state);
+#endif
 }

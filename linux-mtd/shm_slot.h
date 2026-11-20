@@ -8,7 +8,7 @@
 
 #include "linux-mtd/defs.h"
 
-typedef __u64 seq_num_t;
+typedef u64 seq_num_t;
 
 /* The inspiration for this struct is the `struct nand_pos` inside a
  * `struct nand_page_io_req`. It was converted from that struct to a
@@ -16,11 +16,11 @@ typedef __u64 seq_num_t;
  * the shared memory buffer.
  */
 struct nand_io_position_params {
-	__u32 target;
-	__u32 lun;
-	__u32 plane;
-	__u32 eraseblock;
-	__u32 page;
+	u32 target;
+	u32 lun;
+	u32 plane;
+	u32 eraseblock;
+	u32 page;
 };
 
 struct shm_slot_hdr {
@@ -52,8 +52,8 @@ struct shm_slot_hdr {
 	 * the lengths in ACK request should be set according to these
 	 * parameters.
 	 */
-	__u32 datalen;
-	__u32 ooblen;
+	u32 datalen;
+	u32 ooblen;
 };
 
 struct shared_mem_slot {
@@ -65,7 +65,7 @@ struct shared_mem_slot {
 	 * proxy device (with an appropriate ioctl) or the backing
 	 * MTD device itself if so desired.
 	 */
-	__u8 buf[];
+	u8 buf[];
 };
 
 #endif

@@ -11,21 +11,21 @@
 
 struct proxy_shm_info {
 	/* Protocol version for packet communication, should be	0 for now */
-	__u32 proto_ver;
+	u32 proto_ver;
 
 	/* Desired slot size in a queue - including metadata and actual data
 	 * buffer */
-	__u32 slot_size;
+	u32 slot_size;
 
 	/* Currently 2 - one for READ and one for WRITE */
-	__u32 queues_count;
+	u32 queues_count;
 
 	/* Should indicate the size for passing to mmap(2)
 	 * when for getting access to the shared memory.
 	 */
-	__u32 total_buf_size;
+	u32 total_buf_size;
 
-	__u32 reserved[6]; /* reserved for future expansion */
+	u32 reserved[6]; /* reserved for future expansion */
 };
 
 /* This struct is used by userspace for determining the
@@ -33,13 +33,13 @@ struct proxy_shm_info {
  * the queue (READ or WRITE).
  */
 struct proxy_shm_queue_info {
-	__u32 idx;
+	u32 idx;
 
-	__u8 type;
-	__u16 slots_count;
+	u8 type;
+	u16 slots_count;
 
-	__u32 mem_offset;
-	__u32 mem_len;
+	u32 mem_offset;
+	u32 mem_len;
 };
 
 /* It could probably be quite nice to define a struct of

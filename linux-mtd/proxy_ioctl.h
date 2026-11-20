@@ -7,9 +7,7 @@
 #ifndef PROXY_IOCTL_H
 #define PROXY_IOCTL_H
 
-#include "linux-mtd/defs.h"
-#include "linux-mtd/proxy_queue.h"
-#include "linux-mtd/shared_mem.h"
+#include "linux-mtd/proxy_ioctl_types.h"
 
 // Detect whether we are compiling in the kernel or userspace
 #ifdef __KERNEL__
@@ -20,74 +18,6 @@
 
 /* Magic number for ioctl commands */
 #define PROXY_IOC_MAGIC 'P'
-
-/* Struct definitions for ioctl ops */
-struct proxy_mtd_info {
-	__u32 backend_mtd_index;
-	__u16 flash_page_size; /* Should be the entire page size of a NAND flash
-				* chip, including ECC bytes, bad block marker
-				* and other misc bytes which are not intended
-				* for data storage
-				*/
-	__u16 flash_oob_size;  // OOB size includes ECC bytes, bad block marker
-			       // and other misc bytes
-	__u16 flash_sectors_cnt; // Total count of flash device's sectors
-				 // (eraseblocks)
-	__u32 flash_pages_per_sector_cnt; // Page count per erase sector (known
-					  // also as eraseblock)
-	__u32 flash_erase_sector_size;	  // Size of erase sector
-	__u64 flash_size;		  // Total size of flash device
-	__u32 reserved[3];		  /* reserved for future expansion */
-};
-
-struct proxy_stats {
-	__u64 requests;
-	__u64 responses;
-	__u64 errors;
-	__u64 reserved[5]; /* reserved for future expansion */
-};
-
-struct proxy_answer_base {
-	__u8 queue_idx;
-
-	/* A packet slot to ACK or NACK, currently used with a slot number
-	 * to verify that userspace didn't do this by mistake.
-	 * It **MIGHT** be removed if deemed unnecessary later on...
-	 */
-	__u64 seq_num;
-
-	__u64 slot_num;
-};
-
-struct proxy_ack {
-	struct proxy_answer_base base;
-
-	/* Data region that is returned. For most cases should be equal
-	 * to the actual page data region size on the flash chip.
-	 */
-	__u32 retlen;
-	/* OOB region that is returned. For most cases should be equal
-	 * to the actual page OOB region size on the flash chip.
-	 */
-	__u32 oob_retlen;
-};
-
-struct proxy_nack {
-	struct proxy_answer_base base;
-
-	__u16 positive_errno;
-};
-
-struct proxy_register_eventfd {
-	__u8 type;
-	__u32 slot_idx;
-	int fd;
-};
-
-struct proxy_unregister_eventfd {
-	__u8 type;
-	__u32 slot_idx;
-};
 
 /* ioctl commands */
 #define PROXY_IOC_GET_SHM_INFO _IOR(PROXY_IOC_MAGIC, 0, struct proxy_shm_info)
@@ -101,5 +31,11 @@ struct proxy_unregister_eventfd {
 	_IOW(PROXY_IOC_MAGIC, 7, struct proxy_register_eventfd)
 #define PROXY_IOC_UNREGISTER_EVENTFD                                           \
 	_IOW(PROXY_IOC_MAGIC, 8, struct proxy_unregister_eventfd)
+#define PROXY_IOC_UPPER_MTD_READ                                               \
+	_IOWR(PROXY_IOC_MAGIC, 9, struct proxy_upper_mtd_read_req)
+#define PROXY_IOC_UPPER_MTD_WRITE                                              \
+	_IOWR(PROXY_IOC_MAGIC, 10, struct proxy_upper_mtd_write_req)
+#define PROXY_IOC_MTD_ERASE                                                    \
+	_IOW(PROXY_IOC_MAGIC, 11, struct proxy_mtd_erase_req)
 
 #endif

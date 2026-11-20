@@ -3,15 +3,15 @@
  * Copyright (c) 2026 Liav A
  */
 
-#ifndef __DEFS_H
-#define __DEFS_H
+#ifndef __LINUX_MTD__DEFS_H
+#define __LINUX_MTD__DEFS_H
 
 #ifndef __KERNEL__
 #include <stdint.h> /* uint32_t, uint64_t */
 #include <sys/types.h>
-#endif
-
+#else
 #include <linux/types.h>
+#endif
 
 #ifndef __KERNEL__
 typedef uint8_t u8;

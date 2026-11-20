@@ -5,9 +5,21 @@ project(ufedm-dev
     LANGUAGES C
 )
 
+set(LINUX_MTD_SOURCES linux-mtd/dev.c)
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(EXTENDED_SOURCES linux-mtd/dev.c)
+endif()
+
 # Build static library
 add_library(ufedm-dev STATIC
     proxy_dev.c
+    emulated-proxy/dev.c
+    emulated-proxy/bitmap.c
+    emulated-proxy/bits_array.c
+    emulated-proxy/sync_queue.c
+
+    ${EXTENDED_SOURCES}
 )
 
 target_include_directories(ufedm-dev PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

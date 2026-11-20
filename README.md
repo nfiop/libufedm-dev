@@ -112,17 +112,35 @@ The main interfaces include:
 
 | Function | Description |
 | ----- | ----- |
-| `open_proxy_device_state()` | Opens a proxy device and initializes its state. |
-| `close_proxy_device()` | Releases the resources associated with a proxy device. |
-| `create_proxy_dev_queue_state()` | Initializes an individual I/O queue. |
-| `initialize_proxy_dev_queues()` | Initializes multiple I/O queues. |
-| `destroy_proxy_dev_queue_state()` | Destroys an initialized I/O queue. |
-| `register_proxy_eventfd()` | Registers an event file descriptor for an I/O slot. |
-| `unregister_proxy_eventfd()` | Unregisters an event file descriptor. |
+| `proxy_device_close()` | Releases the resources associated with a proxy device. |
+| `proxy_device_create_queue_state()` | Initializes an individual I/O queue. |
+| `proxy_device_initialize_queues()` | Initializes multiple I/O queues. |
+| `proxy_device_destroy_queue_state()` | Destroys an initialized I/O queue. |
 
 Read and write processing is provided through application-defined callbacks using `struct proxy_queue_func_ops`.
 
 See `proxy_dev.h` for the complete API and callback definitions.
+
+## **Linux-specific API**
+
+The library supports 2 kind of proxy device - a Linux ufedm proxy device
+and an emulated proxy device.
+
+An emulated device is always supported, to aid user programs generating
+a demo environment, for example.
+
+It can also be used with Windows and macOS machines, that lack any MTD
+subsystem.
+
+The emulated device mimicks as much as possible the structure and
+principles of the Linux ufedm proxy device structure, hence it's an
+"emulation" of that in userspace.
+
+When the library platform target is Linux, an extension of the public
+API is enabled - mainly `open`-like functions and eventfd registration
+as well.
+
+See `linux-mtd/dev.h` for more information about that API.
 
 ## **Platform support and end goal**
 
