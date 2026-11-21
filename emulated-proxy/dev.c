@@ -362,6 +362,24 @@ int proxy_device_open_emulated(size_t flash_total_size,
     struct proxy_device_state *state)
 {
 	int ret;
+	/* Any NAND chip I've seen or searched for had either 512 bytes per
+	 * page (old NAND chips) or a multiply of it (2048, 4096, etc).
+	 */
+	if ((page_data_size % 512) != 0)
+		return -EINVAL;
+
+	/* flash_total_size (size without accounting for OOB bytes) should be
+	 * aligned to page data size.
+	 */
+	if ((flash_total_size % page_data_size) != 0)
+		return -EINVAL;
+
+	/* This is the smallest amount of OOB bytes I've observed, and anything 
+	 * less is probably unusable anyway.
+	 */
+	if (page_oob_size < 16)
+		return -EINVAL;
+
 	ret = proxy_device_fill_mtd_info(flash_total_size,
 	    flash_erase_sector_size, page_data_size, page_oob_size,
 	    &state->mtd_info);
