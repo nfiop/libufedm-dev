@@ -374,7 +374,7 @@ int proxy_device_open_emulated(size_t flash_total_size,
 	if ((flash_total_size % page_data_size) != 0)
 		return -EINVAL;
 
-	/* This is the smallest amount of OOB bytes I've observed, and anything 
+	/* This is the smallest amount of OOB bytes I've observed, and anything
 	 * less is probably unusable anyway.
 	 */
 	if (page_oob_size < 16)
